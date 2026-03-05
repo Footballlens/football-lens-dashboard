@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback } from "react";
 
 // ─── CONFIGURATION ──────────────────────────────────────
 const APPS_SCRIPT_URL = "https://script.google.com/macros/s/AKfycbxDgz-Zxi989GzhscU7922WqJ1iVE1d4dALVkBcTP1cvfPSoYOfSW7UUKu2TkPxQxluxQ/exec";
