@@ -252,12 +252,12 @@ Topic: ${newTopic}
 Tone: ${newTone}
 Respond ONLY with valid JSON (no markdown):
 {"en":"English post max 280 chars with emojis","ar":"Arabic post max 280 chars with emojis","visualRecommended":true,"visualReason":"one sentence","imagePrompt":"detailed prompt","tone":"label","credibility":85}`;
-        const res = await fetch("https://api.anthropic.com/v1/messages", {
-          method: "POST", headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ model: "claude-sonnet-4-20250514", max_tokens: 1000, messages: [{ role: "user", content: prompt }] }),
+        const res = await fetch("https://api.openai.com/v1/chat/completions", {
+          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
+          body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: prompt }] }),
         });
         const data = await res.json();
-        const text = data.content?.map(i => i.text || "").join("") || "";
+        const text = data.choices?.[0]?.message?.content || "";
         const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
         const newPost = {
           id: Date.now(), type: `${newTone} ✨`, tier: newTone.toUpperCase().slice(0, 8),
