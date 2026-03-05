@@ -279,7 +279,10 @@ Respond ONLY with valid JSON (no markdown):
           tone: newTone, status: "pending", account: newLang, sheetRow: null,
         });
       }
-    } catch (e) { console.error(e); }
+    } catch (e) {
+      console.error(e);
+      setSheetMsg(`❌ Generation failed: ${e.message}`);
+    }
     setGenerating(false);
   };
 
