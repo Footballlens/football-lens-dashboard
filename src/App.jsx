@@ -246,39 +246,28 @@ export default function FootballLensDashboard() {
       } catch (e) { console.error(e); }
     }
     try {
-      if (apiKey) {
-        const prompt = `You are Football Lens, a bilingual football media brand. Generate a post.
+      const prompt = `You are Football Lens, a bilingual football media brand. Generate a post.
 Topic: ${newTopic}
 Tone: ${newTone}
 Respond ONLY with valid JSON (no markdown):
 {"en":"English post max 280 chars with emojis","ar":"Arabic post max 280 chars with emojis","visualRecommended":true,"visualReason":"one sentence","imagePrompt":"detailed prompt","tone":"label","credibility":85}`;
-        const res = await fetch("https://api.openai.com/v1/chat/completions", {
-          method: "POST", headers: { "Content-Type": "application/json", "Authorization": `Bearer ${apiKey}` },
-          body: JSON.stringify({ model: "gpt-4o-mini", messages: [{ role: "user", content: prompt }] }),
-        });
-        const data = await res.json();
-        const text = data.choices?.[0]?.message?.content || "";
-        const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
-        const newPost = {
-          id: Date.now(), type: `${newTone} ✨`, tier: newTone.toUpperCase().slice(0, 8),
-          credibility: parsed.credibility || 85, timeAgo: "Just now",
-          en: parsed.en, ar: parsed.ar,
-          sources: [{ name: "AI Generated", url: "#", icon: "🤖", score: 85 }],
-          visual: { recommended: parsed.visualRecommended, reason: parsed.visualReason, prompt: parsed.imagePrompt, tools: ["Adobe Firefly", "Canva AI"], dimensions: "1200 x 675px" },
-          tone: parsed.tone || newTone, status: "pending", account: newLang, sheetRow: null,
-        };
-        setGeneratedPost(newPost);
-      } else {
-        await new Promise(r => setTimeout(r, 1000));
-        setGeneratedPost({
-          id: Date.now(), type: `${newTone} ✨`, tier: "DEMO", credibility: 88, timeAgo: "Just now",
-          en: `⚡ [DEMO] ${newTopic} — Add OpenAI key in Settings for real AI. #FootballLens`,
-          ar: `⚡ [تجريبي] ${newTopic} — أضف مفتاح OpenAI في الإعدادات. #FootballLens`,
-          sources: [{ name: "Demo Mode", url: "#", icon: "🤖", score: 85 }],
-          visual: { recommended: true, reason: "Demo", prompt: `${newTopic} football graphic 1200x675px`, tools: ["Adobe Firefly", "Canva AI"], dimensions: "1200 x 675px" },
-          tone: newTone, status: "pending", account: newLang, sheetRow: null,
-        });
-      }
+      const res = await fetch("/api/generate", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt }),
+      });
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+      const text = data.content?.map(i => i.text || "").join("") || "";
+      const parsed = JSON.parse(text.replace(/```json|```/g, "").trim());
+      const newPost = {
+        id: Date.now(), type: `${newTone} ✨`, tier: newTone.toUpperCase().slice(0, 8),
+        credibility: parsed.credibility || 85, timeAgo: "Just now",
+        en: parsed.en, ar: parsed.ar,
+        sources: [{ name: "AI Generated", url: "#", icon: "🤖", score: 85 }],
+        visual: { recommended: parsed.visualRecommended, reason: parsed.visualReason, prompt: parsed.imagePrompt, tools: ["Adobe Firefly", "Canva AI"], dimensions: "1200 x 675px" },
+        tone: parsed.tone || newTone, status: "pending", account: newLang, sheetRow: null,
+      };
+      setGeneratedPost(newPost);
     } catch (e) {
       console.error(e);
       setSheetMsg(`❌ Generation failed: ${e.message}`);
@@ -463,9 +452,9 @@ Respond ONLY with valid JSON (no markdown):
               <button style={{ ...S.btn(C.accentGreen), marginTop: 10, width: "100%" }} onClick={connectSheet}>{sheetStatus === "connecting" ? L.connecting : "🔄 Reconnect"}</button>
             </div>
             <div style={{ marginBottom: 16 }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>🤖 OPENAI API KEY</div>
-              <input type="password" placeholder="sk-..." style={S.input} value={apiKey} onChange={e => setApiKey(e.target.value)} />
-              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>platform.openai.com/api-keys</div>
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>🤖 ANTHROPIC API KEY</div>
+              <input type="password" placeholder="sk-ant-..." style={S.input} value={apiKey} onChange={e => setApiKey(e.target.value)} />
+              <div style={{ fontSize: 11, color: C.textMuted, marginTop: 4 }}>console.anthropic.com/settings/keys</div>
             </div>
             <div style={{ marginBottom: 16 }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: C.textMuted, marginBottom: 6 }}>🐦 X API — Football Lens EN</div>
@@ -574,7 +563,7 @@ Respond ONLY with valid JSON (no markdown):
                   <button style={{ ...S.btn(generating || !newTopic.trim() ? C.textMuted : C.accent), width: "100%", padding: 12, fontSize: 15 }} onClick={generatePost} disabled={generating || !newTopic.trim()}>
                     {generating ? `⏳ ${L.generating}` : `🚀 ${L.generateBtn}`}
                   </button>
-                  {!apiKey && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 8, textAlign: "center" }}>💡 {uiLang === "ar" ? "أضف مفتاح OpenAI في الإعدادات للذكاء الاصطناعي الحقيقي" : "Add OpenAI key in Settings for real AI generation"}</div>}
+                  {!apiKey && <div style={{ fontSize: 11, color: C.textMuted, marginTop: 8, textAlign: "center" }}>💡 {uiLang === "ar" ? "أضف مفتاح Anthropic في الإعدادات" : "Add Anthropic key in Settings for real AI"}</div>}
                 </div>
                 {generatedPost && (
                   <>
@@ -732,7 +721,7 @@ Respond ONLY with valid JSON (no markdown):
                 [true, uiLang==="ar"?"تم ربط الجدول":"Sheet connected ✅"],
                 [true, uiLang==="ar"?"تم إنشاء GitHub":"GitHub repo created"],
                 [true, uiLang==="ar"?"تم النشر على Vercel":"Deployed on Vercel ✅"],
-                [!!apiKey, uiLang==="ar"?"مفتاح OpenAI في الإعدادات":"OpenAI key → Settings"],
+                [!!apiKey, uiLang==="ar"?"مفتاح OpenAI في الإعدادات":"Anthropic key → Settings"],
                 [false, uiLang==="ar"?"إنشاء حساب X EN":"Create X EN account"],
                 [false, uiLang==="ar"?"إنشاء حساب X AR":"Create X AR account"],
                 [false, uiLang==="ar"?"مفاتيح X Developer API":"X Developer API keys"],
