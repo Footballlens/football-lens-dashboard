@@ -86,7 +86,7 @@ function LoginScreen({ onAuth }) {
     if (!email.trim() || !email.includes("@")) { setError("Enter a valid email address"); return; }
     setLoading(true); setError("");
     try {
-      const res  = await fetch("/api/auth/login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: email.trim() }) });
+      const res  = await fetch("/api/auth-login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: email.trim() }) });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setSent(true);
@@ -101,7 +101,7 @@ function LoginScreen({ onAuth }) {
 
   const verifyToken = async (token) => {
     try {
-      const res  = await fetch("/api/auth/verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token }) });
+      const res  = await fetch("/api/auth-verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token }) });
       const data = await res.json();
       if (data.valid) onAuth({ sessionToken: data.sessionToken, email: data.email, expiresAt: data.expiresAt });
       else setError(data.error || "Invalid or expired link");
@@ -305,7 +305,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const token  = params.get("auth");
     if (token && !session) {
-      fetch("/api/auth/verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token: decodeURIComponent(token) }) })
+      fetch("/api/auth-verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token: decodeURIComponent(token) }) })
         .then(r => r.json())
         .then(data => { if (data.valid) { window.history.replaceState({},""," "); setSession({ sessionToken: data.sessionToken, email: data.email, expiresAt: data.expiresAt }); } })
         .catch(() => {});
