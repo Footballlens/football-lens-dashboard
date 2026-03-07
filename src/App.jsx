@@ -6,11 +6,17 @@ const SHEET_TABS = { posts: "Posts Log", ideas: "Content Ideas", analytics: "Ana
 const SESSION_KEY = "fl_session"; // in-memory only (no localStorage)
 
 // ── COLORS ────────────────────────────────────────────────────────────────────
-const C = {
+const DARK_THEME = {
   bg:"#0b0f18", sidebar:"#0f1623", card:"#141c2e", border:"#1e2d45",
   accent:"#00d4ff", gold:"#f0a500", green:"#00e676", red:"#ff3d57", purple:"#a78bfa",
   text:"#e8f0fe", muted:"#7a8fa6", dim:"#3a4f66",
 };
+const LIGHT_THEME = {
+  bg:"#f0f4f8", sidebar:"#ffffff", card:"#ffffff", border:"#d1dce8",
+  accent:"#0077cc", gold:"#d4800a", green:"#00913f", red:"#d32f2f", purple:"#7c3aed",
+  text:"#1a2535", muted:"#5a7080", dim:"#9ab0c0",
+};
+let C = DARK_THEME;
 
 // ── SHEET API ─────────────────────────────────────────────────────────────────
 async function sheetRead(tab, range = "A1:Z1000") {
@@ -360,6 +366,8 @@ function Dashboard({ session, onLogout }) {
   const [liveTime, setLiveTime]             = useState(new Date());
   const [sidebarOpen, setSidebarOpen]       = useState(false);
   const [showLogout, setShowLogout]         = useState(false);
+  const [isDark, setIsDark]                 = useState(true);
+  C = isDark ? DARK_THEME : LIGHT_THEME;
 
   useEffect(() => { const t = setInterval(() => setLiveTime(new Date()), 1000); return () => clearInterval(t); }, []);
 
@@ -720,6 +728,7 @@ function Dashboard({ session, onLogout }) {
               <span className="btn-full-label">{monitorStatus==="running"?"Scanning…":"Monitor"}</span>
             </button>
             <button style={btn(C.accent,true)} onClick={syncFromSheet} title="Sync from Sheet">🔄</button>
+            <button onClick={()=>setIsDark(d=>!d)} style={{ background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",color:C.muted,cursor:"pointer",fontSize:14 }} title="Toggle theme">{isDark?"☀️":"🌙"}</button>
             <span style={{ fontSize:12,color:C.muted,fontVariantNumeric:"tabular-nums" }}>{liveTime.toLocaleTimeString()}</span>
           </div>
         </div>
@@ -730,7 +739,7 @@ function Dashboard({ session, onLogout }) {
           {nav==="dashboard" && (
             <>
               <div className="stats-grid" style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:18 }}>
-                {[["Pending",pending.length,C.red,[2,5,3,pending.length]],["Posts in Brain",posts.length,C.green,[10,14,posts.length]],["Auto-Approved",approved.filter(p=>autoApproveLabel(p)).length,C.gold,[0,2,approved.filter(p=>autoApproveLabel(p)).length]],["Sources",active,C.accent,[8,9,active]],["Approved",approved.length,C.green,[0,1,approved.length]]].map(([label,val,color,data],i) => (
+                {[["Pending",pending.length,C.red,[2,5,3,pending.length]],["Posts in Brain",posts.length,C.green,[10,14,posts.length]],["Auto-Approved",approved.filter(p=>autoApproveLabel(p)).length,C.gold,[0,2,approved.filter(p=>autoApproveLabel(p)).length]],["Sources",active,C.accent,[8,9,active]],["Published",posts.filter(p=>p.status==="posted").length,"#1d9bf0",[0,1,posts.filter(p=>p.status==="posted").length]]].map(([label,val,color,data],i) => (
                   <div key={i} style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"13px 16px" }}>
                     <div style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:7 }}>{label}</div>
                     <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end" }}>
@@ -891,7 +900,7 @@ function Dashboard({ session, onLogout }) {
           {nav==="analytics" && (
             <div>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:12,marginBottom:18 }}>
-                {[["Total",posts.length,C.accent],["Approved",approved.length,C.green],["Pending",pending.length,C.gold],["Rejected",rejected.length,C.red]].map(([l,v,col]) => (
+                {[["Total",posts.length,C.accent],["Approved",approved.length,C.green],["Pending",pending.length,C.gold],["Rejected",rejected.length,C.red],["Published",posts.filter(p=>p.status==="posted").length,"#1d9bf0"]].map(([l,v,col]) => (
                   <div key={l} style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"13px 16px" }}>
                     <div style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{l}</div>
                     <div style={{ fontSize:24,fontWeight:800,color:col }}>{v}</div>
