@@ -86,7 +86,7 @@ function LoginScreen({ onAuth }) {
     if (!email.trim() || !email.includes("@")) { setError("Enter a valid email address"); return; }
     setLoading(true); setError("");
     try {
-      const res  = await fetch("/api/auth-login", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ email: email.trim() }) });
+      const res  = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","X-Action":"auth-login"}, body: JSON.stringify({ email: email.trim() }) });
       const data = await res.json();
       if (data.error) throw new Error(data.error);
       setSent(true);
@@ -101,7 +101,7 @@ function LoginScreen({ onAuth }) {
 
   const verifyToken = async (token) => {
     try {
-      const res  = await fetch("/api/auth-verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token }) });
+      const res  = await fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","X-Action":"auth-verify"}, body: JSON.stringify({ token }) });
       const data = await res.json();
       if (data.valid) onAuth({ sessionToken: data.sessionToken, email: data.email, expiresAt: data.expiresAt });
       else setError(data.error || "Invalid or expired link");
@@ -207,7 +207,7 @@ function KillSwitch({ sessionToken }) {
   const [pauseReason, setPauseReason]     = useState("");
 
   useEffect(() => {
-    fetch("/api/killswitch").then(r=>r.json()).then(d => setPostingActive(d.active)).catch(()=>{});
+    fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","X-Action":"killswitch-get"}, body:JSON.stringify({}) }).then(r=>r.json()).then(d => setPostingActive(d.active)).catch(()=>{});
   }, []);
 
   const toggle = async () => {
@@ -215,9 +215,9 @@ function KillSwitch({ sessionToken }) {
     // Resume — no confirmation needed
     setLoading(true);
     try {
-      const res  = await fetch("/api/killswitch", {
-        method:"POST", headers:{"Content-Type":"application/json", "Authorization":`Bearer ${sessionToken}`},
-        body: JSON.stringify({ action:"resume" }),
+      const res  = await fetch("/api/generate", {
+        method:"POST", headers:{"Content-Type":"application/json","X-Action":"killswitch-set"},
+        body: JSON.stringify({ killAction:"resume", email: session?.email }),
       });
       const data = await res.json();
       if (data.success) setPostingActive(true);
@@ -228,9 +228,9 @@ function KillSwitch({ sessionToken }) {
   const confirmPause = async () => {
     setLoading(true);
     try {
-      const res  = await fetch("/api/killswitch", {
-        method:"POST", headers:{"Content-Type":"application/json", "Authorization":`Bearer ${sessionToken}`},
-        body: JSON.stringify({ action:"pause", reason: pauseReason || "Manual pause from dashboard" }),
+      const res  = await fetch("/api/generate", {
+        method:"POST", headers:{"Content-Type":"application/json","X-Action":"killswitch-set"},
+        body: JSON.stringify({ killAction:"pause", reason: pauseReason || "Manual pause from dashboard", email: session?.email }),
       });
       const data = await res.json();
       if (data.success) { setPostingActive(false); setShowConfirm(false); setPauseReason(""); }
@@ -305,7 +305,7 @@ export default function App() {
     const params = new URLSearchParams(window.location.search);
     const token  = params.get("auth");
     if (token && !session) {
-      fetch("/api/auth-verify", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ token: decodeURIComponent(token) }) })
+      fetch("/api/generate", { method:"POST", headers:{"Content-Type":"application/json","X-Action":"auth-verify"}, body: JSON.stringify({ token: decodeURIComponent(token) }) })
         .then(r => r.json())
         .then(data => { if (data.valid) { window.history.replaceState({},""," "); setSession({ sessionToken: data.sessionToken, email: data.email, expiresAt: data.expiresAt }); } })
         .catch(() => {});
@@ -393,6 +393,22 @@ function Dashboard({ session, onLogout }) {
     try { const d = await fetch("/api/matches").then(r=>r.json()); if (d.matches) setTodayMatches(d.matches.slice(0,8)); } catch {}
   };
 
+  // Publish to X
+  const publishPost = async (post) => {
+    msg("🚀 Publishing to X...");
+    try {
+      const r = await fetch("/api/post", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({ textEN:post.en, textAR:post.ar, rowIndex:post.rowIndex, account:"BOTH" }) });
+      const d = await r.json();
+      if (d.success) {
+        push("🐦","Posted to X!",`EN: ${d.results?.en?.url||"✓"} | AR: ${d.results?.ar?.url||"✓"}`,C.green);
+        msg("✅ Posted to both X accounts!");
+        setPosts(prev=>prev.map(p=>p.id===post.id?{...p,status:"posted"}:p));
+      } else {
+        msg("❌ Post failed: "+Object.values(d.errors||{}).join(" | "));
+      }
+    } catch(e) { msg("❌ Error: "+e.message); }
+  };
+
   // FIX 3+4: Approve/Reject — batch update, in-place
   const approvePost = async (id, action) => {
     const post = posts.find(p=>p.id===id);
@@ -410,6 +426,11 @@ function Dashboard({ session, onLogout }) {
       } catch (e) { msg(`⚠️ Local only — sheet sync failed: ${e.message}`, true); }
     }
     setSyncingId(null);
+    // Auto-publish immediately after approval
+    if (status === "Approved") {
+      const updatedPost = { ...post, status: "approved" };
+      await publishPost(updatedPost);
+    }
   };
 
   // FIX 2: Real edit
@@ -606,7 +627,7 @@ function Dashboard({ session, onLogout }) {
             {isEdit ? (
               <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
             ) : (
-              <><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
+              <><><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
             )}
           </div>
         )}
