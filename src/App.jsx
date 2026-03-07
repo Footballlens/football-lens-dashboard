@@ -627,7 +627,7 @@ function Dashboard({ session, onLogout }) {
             {isEdit ? (
               <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
             ) : (
-              <><><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
+              <><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
             )}
           </div>
         )}
