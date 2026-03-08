@@ -200,14 +200,16 @@ module.exports = async function handler(req, res) {
       .slice(0, 4); // max 4 posts per run
 
     if (uniqueItems.length === 0) {
-      // Fallback: generate evergreen content
+      // Fallback: generate evergreen content (clearly labeled as AI-generated, not real news)
+      const day = new Date().toLocaleDateString("en-GB", { day:"numeric", month:"long" });
       const evergreen = [
-        { title:"On this day in football history", desc:"A legendary moment in football history", source:"AI Engine", cred:80, tier:"MAJOR" },
-        { title:"Best XI of the current Premier League season", desc:"Who makes the cut?", source:"AI Engine", cred:80, tier:"MAJOR" },
-        { title:"Greatest football rivalries of all time", desc:"The matches that define football", source:"AI Engine", cred:80, tier:"MAJOR" },
+        { title:`On this day in football: historic moments on ${day}`, desc:"A look back at legendary football moments on this date", source:"Football Lens AI", cred:78, tier:"EVERGREEN" },
+        { title:"Weekend football preview: matches to watch this weekend", desc:"Key fixtures and what to look out for", source:"Football Lens AI", cred:78, tier:"EVERGREEN" },
+        { title:"Football debate: greatest Premier League managers of all time", desc:"Who tops the list?", source:"Football Lens AI", cred:78, tier:"EVERGREEN" },
       ];
       const pick = evergreen[Math.floor(Math.random()*evergreen.length)];
       uniqueItems.push({ ...pick, classification: { type:"Football Story", tone:"Nostalgic", priority:3 } });
+      results.fallback = true;
     }
 
     // 3. Generate + log posts
@@ -231,6 +233,9 @@ module.exports = async function handler(req, res) {
       }
     }
 
+    results.rssCount = rssItems.length;
+    results.tavilyCount = tavilyItems.length;
+    results.uniqueCount = uniqueItems.length;
     await logCronRun("news", results.postsGenerated, results.autoApproved, results.pendingApproval,
       `Sources: ${[...new Set(results.sources)].join(", ")}`);
 
