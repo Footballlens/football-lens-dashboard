@@ -16,6 +16,7 @@ const LIGHT_THEME = {
   accent:"#0077cc", gold:"#d4800a", green:"#00913f", red:"#d32f2f", purple:"#7c3aed",
   text:"#1a2535", muted:"#5a7080", dim:"#9ab0c0",
 };
+// C is set inside Dashboard via useTheme hook
 let C = DARK_THEME;
 
 // ── SHEET API ─────────────────────────────────────────────────────────────────
@@ -325,6 +326,104 @@ export default function App() {
   return <Dashboard session={session} onLogout={handleLogout} />;
 }
 
+
+// ── LIVE CLOCK ──────────────────────────────────────────────────────────────
+function LiveClock({ color }) {
+  const [t, setT] = React.useState(new Date());
+  React.useEffect(() => { const id = setInterval(() => setT(new Date()), 1000); return () => clearInterval(id); }, []);
+  return <span style={{ fontSize:12, color, fontVariantNumeric:'tabular-nums' }}>{t.toLocaleTimeString()}</span>;
+}
+
+function PostCard({ post, C, expandedId, setExpandedId, editingId, setEditingId, editText, setEditText, syncingId, generatedImages, generatingImg, generateImage, approvePost, startEdit, saveEdit, btn, bdg, card, ltab, ta, tierColor, autoApproveLabel }) {
+    const [lang, setLang] = useState("en");
+    const isExp  = expandedId===post.id;
+    const isEdit = editingId===post.id;
+    const isSyn  = syncingId===post.id;
+    const autoLbl = autoApproveLabel(post);
+    const imgUrl  = generatedImages[post.id];
+    const isGenImg = generatingImg===post.id;
+    const borderCol = post.status==="approved"?C.green+"55":post.status==="rejected"?C.red+"33":C.border;
+
+    return (
+      <div style={{ ...card(), borderColor:borderCol }}>
+        <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:5 }}>
+          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
+            <span style={bdg(tierColor(post.tier))}>{post.tier}</span>
+            <span style={{ fontSize:11, color:C.muted }}>{post.type}</span>
+            {post.status==="approved" && autoLbl && <span style={{ fontSize:10, color:autoLbl.color, fontWeight:700 }}>⚡ {autoLbl.label}</span>}
+          </div>
+          <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
+            <span style={{ fontSize:12, fontWeight:700, color:post.credibility>=85?C.green:C.gold }}>{post.credibility>=85?"🟢":"🟡"} {post.credibility}%</span>
+            {post.status!=="pending" && <span style={bdg(post.status==="approved"?C.green:C.red)}>{post.status.toUpperCase()}</span>}
+            {isSyn && <span style={{ fontSize:10, color:C.gold }}>⏳</span>}
+            {post.impressions>0 && <span style={{ fontSize:11, color:C.accent }}>👁 {post.impressions.toLocaleString()}</span>}
+            {post.likes>0        && <span style={{ fontSize:11, color:C.red }}>❤️ {post.likes}</span>}
+          </div>
+        </div>
+        <div style={{ padding:"11px 14px" }}>
+          {/* FIX 1: Independent lang tab */}
+          <div style={{ display:"flex", gap:4, marginBottom:9, background:"#070b14", borderRadius:8, padding:3 }}>
+            <button style={ltab(lang==="en")} onClick={() => setLang("en")}>🇬🇧 English</button>
+            <button style={ltab(lang==="ar")} onClick={() => setLang("ar")}>🇸🇦 Arabic</button>
+          </div>
+          {/* FIX 2: Real textarea */}
+          {isEdit ? (
+            <div>
+              <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>🇬🇧 English:</div>
+              <textarea style={{ ...ta, marginBottom:8, direction:"ltr" }} value={editText.en} onChange={e=>setEditText(p=>({...p,en:e.target.value}))} autoFocus />
+              <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>🇸🇦 Arabic:</div>
+              <textarea style={{ ...ta, direction:"rtl", textAlign:"right" }} value={editText.ar} onChange={e=>setEditText(p=>({...p,ar:e.target.value}))} />
+            </div>
+          ) : (
+            <div style={{ background:"#070b14", borderRadius:8, padding:"9px 11px", fontSize:13, lineHeight:1.7, direction:lang==="ar"?"rtl":"ltr", textAlign:lang==="ar"?"right":"left", minHeight:50 }}>
+              {lang==="en" ? post.en : post.ar}
+            </div>
+          )}
+          {imgUrl && (
+            <div style={{ marginTop:10 }}>
+              <img src={imgUrl} alt="Generated visual" style={{ width:"100%", borderRadius:8, maxHeight:180, objectFit:"cover" }} />
+              <a href={imgUrl} target="_blank" rel="noreferrer" style={{ ...btn(C.accent,true), display:"inline-block", marginTop:6, fontSize:11 }}>⬇ Download</a>
+            </div>
+          )}
+          {isExp && !isEdit && (
+            <div style={{ marginTop:10 }}>
+              {(post.src1||post.src2) && (
+                <div style={{ marginBottom:10 }}>
+                  <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:5 }}>📎 Sources</div>
+                  {[post.src1,post.src2].filter(Boolean).map((s,i) => <div key={i} style={{ fontSize:12, padding:"3px 0", borderBottom:`1px solid ${C.border}`, color:C.accent }}>{s}</div>)}
+                </div>
+              )}
+              {post.visualRecommended && (
+                <div style={{ background:`${C.gold}0d`, border:`1px solid ${C.gold}33`, borderRadius:8, padding:10 }}>
+                  <div style={{ fontSize:11, fontWeight:700, color:C.gold, marginBottom:6 }}>🖼️ Visual Recommended</div>
+                  <button style={{ ...btn(isGenImg?C.muted:C.purple), width:"100%", padding:9 }}
+                    onClick={() => generateImage(post.id, `Football social media image: ${post.en.slice(0,100)}`, post.tone)} disabled={isGenImg}>
+                    {isGenImg?"⏳ Generating…":"🎨 Generate with DALL-E 3"}
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+          <button onClick={() => setExpandedId(isExp?null:post.id)} style={{ background:"none", border:"none", color:C.accent, cursor:"pointer", fontSize:11, fontWeight:600, marginTop:7, padding:0 }}>
+            {isExp?"▲ Hide":"▼ Sources & visual"}
+          </button>
+        </div>
+        {post.status==="pending" && (
+          <div style={{ padding:"9px 14px", borderTop:`1px solid ${C.border}`, display:"flex", gap:5, flexWrap:"wrap", background:"#070b1488" }}>
+            {isEdit ? (
+              <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
+            ) : (
+              <><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+
+
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // DASHBOARD (only rendered when authenticated)
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -363,13 +462,13 @@ function Dashboard({ session, onLogout }) {
     { id:3, icon:"📡", title:"10 Sources Online", sub:"RSS + Web monitored", time:"2m ago", color:C.gold },
   ]);
   const [todayMatches, setTodayMatches]     = useState([]);
-  const [liveTime, setLiveTime]             = useState(new Date());
+  // liveTime moved to LiveClock component to avoid re-rendering PostCard every second
   const [sidebarOpen, setSidebarOpen]       = useState(false);
   const [showLogout, setShowLogout]         = useState(false);
   const [isDark, setIsDark]                 = useState(true);
-  C = isDark ? DARK_THEME : LIGHT_THEME;
+  C = isDark ? DARK_THEME : LIGHT_THEME; // eslint-disable-line
 
-  useEffect(() => { const t = setInterval(() => setLiveTime(new Date()), 1000); return () => clearInterval(t); }, []);
+  // clock interval removed - see LiveClock component
 
   const push = (icon, title, sub, color=C.accent) =>
     setActivity(a => [{ id:Date.now(), icon, title, sub, time:"Just now", color }, ...a.slice(0,9)]);
@@ -556,93 +655,7 @@ function Dashboard({ session, onLogout }) {
   };
 
   // ── POST CARD (FIX 1: own lang state) ────────────────────────────────────
-  const PostCard = ({ post }) => {
-    const [lang, setLang] = useState("en");
-    const isExp  = expandedId===post.id;
-    const isEdit = editingId===post.id;
-    const isSyn  = syncingId===post.id;
-    const autoLbl = autoApproveLabel(post);
-    const imgUrl  = generatedImages[post.id];
-    const isGenImg = generatingImg===post.id;
-    const borderCol = post.status==="approved"?C.green+"55":post.status==="rejected"?C.red+"33":C.border;
-
-    return (
-      <div style={{ ...card(), borderColor:borderCol }}>
-        <div style={{ padding:"10px 14px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:5 }}>
-          <div style={{ display:"flex", alignItems:"center", gap:6, flexWrap:"wrap" }}>
-            <span style={bdg(tierColor(post.tier))}>{post.tier}</span>
-            <span style={{ fontSize:11, color:C.muted }}>{post.type}</span>
-            {post.status==="approved" && autoLbl && <span style={{ fontSize:10, color:autoLbl.color, fontWeight:700 }}>⚡ {autoLbl.label}</span>}
-          </div>
-          <div style={{ display:"flex", alignItems:"center", gap:7, flexWrap:"wrap" }}>
-            <span style={{ fontSize:12, fontWeight:700, color:post.credibility>=85?C.green:C.gold }}>{post.credibility>=85?"🟢":"🟡"} {post.credibility}%</span>
-            {post.status!=="pending" && <span style={bdg(post.status==="approved"?C.green:C.red)}>{post.status.toUpperCase()}</span>}
-            {isSyn && <span style={{ fontSize:10, color:C.gold }}>⏳</span>}
-            {post.impressions>0 && <span style={{ fontSize:11, color:C.accent }}>👁 {post.impressions.toLocaleString()}</span>}
-            {post.likes>0        && <span style={{ fontSize:11, color:C.red }}>❤️ {post.likes}</span>}
-          </div>
-        </div>
-        <div style={{ padding:"11px 14px" }}>
-          {/* FIX 1: Independent lang tab */}
-          <div style={{ display:"flex", gap:4, marginBottom:9, background:"#070b14", borderRadius:8, padding:3 }}>
-            <button style={ltab(lang==="en")} onClick={() => setLang("en")}>🇬🇧 English</button>
-            <button style={ltab(lang==="ar")} onClick={() => setLang("ar")}>🇸🇦 Arabic</button>
-          </div>
-          {/* FIX 2: Real textarea */}
-          {isEdit ? (
-            <div>
-              <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>🇬🇧 English:</div>
-              <textarea style={{ ...ta, marginBottom:8, direction:"ltr" }} value={editText.en} onChange={e=>setEditText(p=>({...p,en:e.target.value}))} autoFocus />
-              <div style={{ fontSize:11, color:C.muted, marginBottom:4 }}>🇸🇦 Arabic:</div>
-              <textarea style={{ ...ta, direction:"rtl", textAlign:"right" }} value={editText.ar} onChange={e=>setEditText(p=>({...p,ar:e.target.value}))} />
-            </div>
-          ) : (
-            <div style={{ background:"#070b14", borderRadius:8, padding:"9px 11px", fontSize:13, lineHeight:1.7, direction:lang==="ar"?"rtl":"ltr", textAlign:lang==="ar"?"right":"left", minHeight:50 }}>
-              {lang==="en" ? post.en : post.ar}
-            </div>
-          )}
-          {imgUrl && (
-            <div style={{ marginTop:10 }}>
-              <img src={imgUrl} alt="Generated visual" style={{ width:"100%", borderRadius:8, maxHeight:180, objectFit:"cover" }} />
-              <a href={imgUrl} target="_blank" rel="noreferrer" style={{ ...btn(C.accent,true), display:"inline-block", marginTop:6, fontSize:11 }}>⬇ Download</a>
-            </div>
-          )}
-          {isExp && !isEdit && (
-            <div style={{ marginTop:10 }}>
-              {(post.src1||post.src2) && (
-                <div style={{ marginBottom:10 }}>
-                  <div style={{ fontSize:10, fontWeight:700, color:C.muted, textTransform:"uppercase", letterSpacing:1, marginBottom:5 }}>📎 Sources</div>
-                  {[post.src1,post.src2].filter(Boolean).map((s,i) => <div key={i} style={{ fontSize:12, padding:"3px 0", borderBottom:`1px solid ${C.border}`, color:C.accent }}>{s}</div>)}
-                </div>
-              )}
-              {post.visualRecommended && (
-                <div style={{ background:`${C.gold}0d`, border:`1px solid ${C.gold}33`, borderRadius:8, padding:10 }}>
-                  <div style={{ fontSize:11, fontWeight:700, color:C.gold, marginBottom:6 }}>🖼️ Visual Recommended</div>
-                  <button style={{ ...btn(isGenImg?C.muted:C.purple), width:"100%", padding:9 }}
-                    onClick={() => generateImage(post.id, `Football social media image: ${post.en.slice(0,100)}`, post.tone)} disabled={isGenImg}>
-                    {isGenImg?"⏳ Generating…":"🎨 Generate with DALL-E 3"}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          <button onClick={() => setExpandedId(isExp?null:post.id)} style={{ background:"none", border:"none", color:C.accent, cursor:"pointer", fontSize:11, fontWeight:600, marginTop:7, padding:0 }}>
-            {isExp?"▲ Hide":"▼ Sources & visual"}
-          </button>
-        </div>
-        {post.status==="pending" && (
-          <div style={{ padding:"9px 14px", borderTop:`1px solid ${C.border}`, display:"flex", gap:5, flexWrap:"wrap", background:"#070b1488" }}>
-            {isEdit ? (
-              <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
-            ) : (
-              <><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
-            )}
-          </div>
-        )}
-      </div>
-    );
-  };
-
+  // ── RENDER ──
   // ── RENDER ────────────────────────────────────────────────────────────────
   return (
     <div style={{ display:"flex", minHeight:"100vh", background:C.bg, fontFamily:"'DM Sans','Segoe UI',sans-serif", color:C.text }}>
@@ -729,7 +742,7 @@ function Dashboard({ session, onLogout }) {
             </button>
             <button style={btn(C.accent,true)} onClick={syncFromSheet} title="Sync from Sheet">🔄</button>
             <button onClick={()=>setIsDark(d=>!d)} style={{ background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",color:C.muted,cursor:"pointer",fontSize:14 }} title="Toggle theme">{isDark?"☀️":"🌙"}</button>
-            <span style={{ fontSize:12,color:C.muted,fontVariantNumeric:"tabular-nums" }}>{liveTime.toLocaleTimeString()}</span>
+            <LiveClock color={C.muted} />
           </div>
         </div>
 
@@ -758,7 +771,7 @@ function Dashboard({ session, onLogout }) {
                     </div>
                     <div style={{ padding:14 }}>
                       {pending.length===0 ? <div style={{ textAlign:"center",padding:"24px 0",color:C.muted,fontSize:13 }}>🎉 All caught up! <button style={{ ...btn(C.accent),marginLeft:10 }} onClick={()=>setNav("generate")}>✨ Generate</button></div>
-                        : pending.slice(0,2).map(p => <PostCard key={p.id} post={p} />)}
+                        : pending.slice(0,2).map(p => <PostCard key={p.id} post={p} C={C} expandedId={expandedId} setExpandedId={setExpandedId} editingId={editingId} setEditingId={setEditingId} editText={editText} setEditText={setEditText} syncingId={syncingId} generatedImages={generatedImages} generatingImg={generatingImg} generateImage={generateImage} approvePost={approvePost} startEdit={startEdit} saveEdit={saveEdit} btn={btn} bdg={bdg} card={card} ltab={ltab} ta={ta} tierColor={tierColor} autoApproveLabel={autoApproveLabel} />)}
                     </div>
                   </div>
                   <div style={card()}>
@@ -816,7 +829,7 @@ function Dashboard({ session, onLogout }) {
                 <button style={btn(C.green,true)} onClick={syncFromSheet}>🔄 Sync</button>
               </div>
               {displayed.length===0 ? <div style={{ ...card(),padding:46,textAlign:"center",color:C.muted }}>No posts. <button style={{ ...btn(C.accent),marginLeft:10 }} onClick={()=>setNav("generate")}>✨ Generate</button></div>
-                : displayed.map(p => <PostCard key={p.id} post={p} />)}
+                : displayed.map(p => <PostCard key={p.id} post={p} C={C} expandedId={expandedId} setExpandedId={setExpandedId} editingId={editingId} setEditingId={setEditingId} editText={editText} setEditText={setEditText} syncingId={syncingId} generatedImages={generatedImages} generatingImg={generatingImg} generateImage={generateImage} approvePost={approvePost} startEdit={startEdit} saveEdit={saveEdit} btn={btn} bdg={bdg} card={card} ltab={ltab} ta={ta} tierColor={tierColor} autoApproveLabel={autoApproveLabel} />)}
             </>
           )}
 
@@ -838,7 +851,7 @@ function Dashboard({ session, onLogout }) {
                   {generating?"⏳ Generating…":"🚀 Generate Post"}
                 </button>
               </div>
-              {generatedPost && (<><div style={{ fontSize:13,fontWeight:700,color:C.green,marginBottom:8 }}>✅ Review and add to queue:</div><PostCard post={generatedPost} /><button style={{ ...btn(C.green),width:"100%",padding:13,fontSize:14,marginTop:-6 }} onClick={addToQueue}>➕ Add to Queue & Log as Pending</button></>)}
+              {generatedPost && (<><div style={{ fontSize:13,fontWeight:700,color:C.green,marginBottom:8 }}>✅ Review and add to queue:</div><PostCard post={generatedPost} C={C} expandedId={expandedId} setExpandedId={setExpandedId} editingId={editingId} setEditingId={setEditingId} editText={editText} setEditText={setEditText} syncingId={syncingId} generatedImages={generatedImages} generatingImg={generatingImg} generateImage={generateImage} approvePost={approvePost} startEdit={startEdit} saveEdit={saveEdit} btn={btn} bdg={bdg} card={card} ltab={ltab} ta={ta} tierColor={tierColor} autoApproveLabel={autoApproveLabel} /><button style={{ ...btn(C.green),width:"100%",padding:13,fontSize:14,marginTop:-6 }} onClick={addToQueue}>➕ Add to Queue & Log as Pending</button></>)}
               <div style={{ ...card(),padding:14,marginTop:13 }}>
                 <div style={{ fontSize:13,fontWeight:700,marginBottom:10 }}>⚡ Quick Shortcuts</div>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:7 }}>
