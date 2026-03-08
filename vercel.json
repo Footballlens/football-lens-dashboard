@@ -3,17 +3,11 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "functions": {
-    "api/cron.js": {
-      "memory": 512,
-      "maxDuration": 60
-    },
-    "api/generate.js": {
-      "memory": 256,
-      "maxDuration": 30
-    },
-    "api/*.js": {
-      "memory": 256,
-      "maxDuration": 30
-    }
+    "api/cron.js":       { "memory": 512, "maxDuration": 60 },
+    "api/live.js":       { "memory": 256, "maxDuration": 30 },
+    "api/engagement.js": { "memory": 256, "maxDuration": 60 },
+    "api/generate.js":   { "memory": 256, "maxDuration": 30 },
+    "api/post.js":       { "memory": 256, "maxDuration": 30 },
+    "api/*.js":          { "memory": 256, "maxDuration": 30 }
   }
 }
