@@ -465,6 +465,8 @@ function Dashboard({ session, onLogout }) {
   // liveTime moved to LiveClock component to avoid re-rendering PostCard every second
   const [sidebarOpen, setSidebarOpen]       = useState(false);
   const [showLogout, setShowLogout]         = useState(false);
+  const [strategy, setStrategy]             = useState(null);
+  const [liveMatchResults, setLiveResults]  = useState(null);
   const [isDark, setIsDark]                 = useState(true);
   C = isDark ? DARK_THEME : LIGHT_THEME; // eslint-disable-line
 
@@ -489,6 +491,15 @@ function Dashboard({ session, onLogout }) {
       setIdeasData(ideasRows.filter(r => r[0] && r[0]!=="Date Added"));
       setAnalyticsData(analyticsRows.filter(r => r[0] && r[0]!=="Week"));
       setCronHistory(dashRows.filter(r=>r[0]).slice(-20).reverse());
+      // Load strategy brain
+      try {
+        const stratRows = await sheetRead("Strategy Brain","A1:B20").catch(()=>[]);
+        if (stratRows.length) {
+          const s = {};
+          stratRows.forEach(r => { if(r[0]) s[r[0]]=r[1]; });
+          setStrategy(s);
+        }
+      } catch {}
       setSheetStatus("connected");
       push("🔄","Sheet Synced","All posts reconciled",C.green);
     } catch (e) { setSheetStatus("error"); msg(`❌ Sync failed: ${e.message}`, true); }
@@ -612,6 +623,25 @@ function Dashboard({ session, onLogout }) {
       await syncFromSheet();
     } catch (e) { msg(`⚠️ Monitor: ${e.message}`, true); }
     setMonitorStatus("idle");
+  };
+
+  const runLive = async () => {
+    try {
+      const data = await fetch("/api/live", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({}) }).then(r=>r.json());
+      setLiveResults(data);
+      push("⚽","Live Engine","Matches:"+( data.matchesFound||0)+" Posts:"+(data.postsCreated||0), C.red);
+      if (data.postsCreated > 0) await syncFromSheet();
+    } catch(e) { msg("❌ Live: "+e.message, true); }
+  };
+
+  const runEngagement = async () => {
+    msg("🧠 Running performance analysis...");
+    try {
+      const data = await fetch("/api/engagement", { method:"POST", headers:{"Content-Type":"application/json"}, body:JSON.stringify({}) }).then(r=>r.json());
+      if (data.strategy) setStrategy(data.strategy);
+      push("📊","Strategy Updated","Performance analysis complete",C.purple);
+      msg("✅ Strategy brain updated!");
+    } catch(e) { msg("❌ Engagement: "+e.message, true); }
   };
 
   const validateSource = async () => {
@@ -738,7 +768,10 @@ function Dashboard({ session, onLogout }) {
             <KillSwitch sessionToken={session.sessionToken} />
             <button style={{ ...btn(monitorStatus==="running"?C.gold:C.green),display:"flex",alignItems:"center",gap:5 }} onClick={runMonitor} disabled={monitorStatus==="running"}>
               <span style={{ display:"inline-block",animation:monitorStatus==="running"?"spin 1s linear infinite":"none" }}>🔍</span>
-              <span className="btn-full-label">{monitorStatus==="running"?"Scanning…":"Monitor"}</span>
+              <span className="btn-full-label">{monitorStatus==="running"?"Scanning…":"News"}</span>
+            </button>
+            <button style={{ ...btn(C.red,true),display:"flex",alignItems:"center",gap:5 }} onClick={runLive} title="Check live matches">
+              <span>⚽</span><span className="btn-full-label">Live</span>
             </button>
             <button style={btn(C.accent,true)} onClick={syncFromSheet} title="Sync from Sheet">🔄</button>
             <button onClick={()=>setIsDark(d=>!d)} style={{ background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",color:C.muted,cursor:"pointer",fontSize:14 }} title="Toggle theme">{isDark?"☀️":"🌙"}</button>
@@ -979,14 +1012,49 @@ function Dashboard({ session, onLogout }) {
           )}
 
           {nav==="insights" && (
-            <div style={{ maxWidth:640 }}>
-              <div style={{ fontSize:15,fontWeight:800,marginBottom:14 }}>🧠 AI Analysis & Proposals</div>
-              {[[C.green,"🚀","Arabic engagement 38% higher","AR account drives higher engagement. Increase AR posting to 8 posts/day."],[C.accent,"📊","Breaking news 3× impressions","BREAKING posts average 3.2× more impressions. Auto-approval ensures speed."],[C.gold,"💡","Add 'This Day in Football' series","Historical posts 8-10am get 67% more saves. Cron auto-generates daily."],[C.red,"⚠️","Tactical threads underperforming","Long tactical threads get low completion. Try 3-part visual carousel."],[C.purple,"🎯","Matchday content gap","No live match posts in last 48h. Goal reaction posts 5× normal engagement."],[C.green,"📸","Activate DALL-E 3 visuals","Click '🎨 Generate Visual' on any post card with 'Visual Recommended' label."]].map(([col,icon,title,body]) => (
-                <div key={title} style={{ background:`${col}0d`,border:`1px solid ${col}33`,borderRadius:12,padding:"12px 16px",marginBottom:9 }}>
-                  <div style={{ fontSize:14,fontWeight:800,marginBottom:4,color:col }}>{icon} {title}</div>
-                  <div style={{ fontSize:13,color:C.muted,lineHeight:1.6 }}>{body}</div>
+            <div style={{ maxWidth:700 }}>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
+                <div style={{ fontSize:15,fontWeight:800 }}>🧠 Strategy Brain</div>
+                <button style={btn(C.purple)} onClick={runEngagement}>📊 Run Analysis Now</button>
+              </div>
+              {strategy ? (
+                <>
+                  <div style={{ display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:10,marginBottom:16 }}>
+                    {[["Avg Likes",strategy.avg_likes||"—",C.red],["Avg Retweets",strategy.avg_retweets||"—",C.green],["Avg Impressions",strategy.avg_impressions||"—",C.accent]].map(([l,v,col])=>(
+                      <div key={l} style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"13px 16px" }}>
+                        <div style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>{l}</div>
+                        <div style={{ fontSize:22,fontWeight:800,color:col }}>{v}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {[
+                    [C.green,"🎯","Best Performing Tone",strategy.preferred_tone],
+                    [C.gold,"⭐","Top Clubs to Follow",strategy.top_clubs],
+                    [C.accent,"🏆","Top Leagues",strategy.top_leagues],
+                    [C.green,"📈","Increase",strategy.increase],
+                    [C.red,"📉","Decrease",strategy.decrease],
+                    [C.purple,"💡","AI Advice",strategy.posting_advice],
+                  ].filter(([,,, v])=>v).map(([col,icon,title,body])=>(
+                    <div key={title} style={{ background:`${col}0d`,border:`1px solid ${col}33`,borderRadius:12,padding:"12px 16px",marginBottom:9 }}>
+                      <div style={{ fontSize:13,fontWeight:800,marginBottom:4,color:col }}>{icon} {title}</div>
+                      <div style={{ fontSize:13,color:C.muted,lineHeight:1.6 }}>{body}</div>
+                    </div>
+                  ))}
+                  <div style={{ fontSize:11,color:C.dim,marginTop:8 }}>
+                    Last analysis: {strategy.analysis_date||"—"} · Trend: <span style={{ color:strategy.trend==="improving"?C.green:strategy.trend==="declining"?C.red:C.gold,fontWeight:700 }}>{strategy.trend||"—"}</span>
+                  </div>
+                </>
+              ) : (
+                <div style={{ ...card(),padding:40,textAlign:"center" }}>
+                  <div style={{ fontSize:32,marginBottom:12 }}>🧠</div>
+                  <div style={{ fontSize:14,fontWeight:700,color:C.text,marginBottom:8 }}>No strategy data yet</div>
+                  <div style={{ fontSize:13,color:C.muted,marginBottom:20,lineHeight:1.7 }}>
+                    The AI analyses your X account performance daily.<br/>
+                    After 7+ days of posting, it will automatically adjust<br/>tone, topics and frequency for maximum growth.
+                  </div>
+                  <button style={btn(C.purple)} onClick={runEngagement}>📊 Run First Analysis</button>
                 </div>
-              ))}
+              )}
             </div>
           )}
 
