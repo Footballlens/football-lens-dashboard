@@ -3,8 +3,16 @@
   "outputDirectory": "build",
   "framework": "create-react-app",
   "functions": {
-    "api/*.js": {
+    "api/cron.js": {
       "memory": 512,
+      "maxDuration": 60
+    },
+    "api/generate.js": {
+      "memory": 256,
+      "maxDuration": 30
+    },
+    "api/*.js": {
+      "memory": 256,
       "maxDuration": 30
     }
   }
