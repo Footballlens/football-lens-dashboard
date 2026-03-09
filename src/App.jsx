@@ -61,7 +61,10 @@ function rowToPost(row, sheetRow) {
 
 function autoApproveLabel(post) {
   const type=(post.type||"").toLowerCase(), tone=(post.tone||"").toLowerCase();
-  if (type.includes("break")||tone.includes("break")) return { label:"BREAKING — auto-approved", color:C.red };
+  if (type.includes("poll")||tone.includes("poll"))         return { label:"POLL — auto-approved", color:"#00d4ff" };
+  if (type.includes("debate")||tone.includes("debate"))     return { label:"DEBATE — auto-approved", color:"#a78bfa" };
+  if (type.includes("reaction")||tone.includes("reaction")) return { label:"REACTION — auto-approved", color:"#f0a500" };
+  if (type.includes("break")||tone.includes("break"))       return { label:"BREAKING — auto-approved", color:C.red };
   if (type.includes("transfer")||tone.includes("transfer")) return { label:"TRANSFER — auto-approved", color:C.gold };
   if (post.credibility>=95) return { label:"HIGH CRED — auto-approved", color:C.green };
   return null;
@@ -408,13 +411,15 @@ function PostCard({ post, C, expandedId, setExpandedId, editingId, setEditingId,
             {isExp?"▲ Hide":"▼ Sources & visual"}
           </button>
         </div>
-        {post.status==="pending" && (
+        {(post.status==="pending"||post.status==="rejected") && (
           <div style={{ padding:"9px 14px", borderTop:`1px solid ${C.border}`, display:"flex", gap:5, flexWrap:"wrap", background:"#070b1488" }}>
-            {isEdit ? (
-              <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
-            ) : (
+            {post.status==="pending" && !isEdit && (
               <><button style={btn(C.green)} onClick={()=>approvePost(post.id,"both")}>✅ Approve</button><button style={btn(C.accent,true)} onClick={()=>approvePost(post.id,"en")}>🇬🇧</button><button style={btn(C.gold,true)} onClick={()=>approvePost(post.id,"ar")}>🇸🇦</button><button style={btn(C.muted,true)} onClick={()=>startEdit(post)}>✏️</button><button style={btn(C.red,true)} onClick={()=>approvePost(post.id,"reject")}>✕</button></>
             )}
+            {isEdit && (
+              <><button style={btn(C.green)} onClick={()=>saveEdit(post.id)}>💾 Save</button><button style={btn(C.muted,true)} onClick={()=>setEditingId(null)}>Cancel</button></>
+            )}
+            <button style={{ ...btn(C.red,true), marginLeft:"auto", fontSize:11 }} onClick={()=>approvePost(post.id,"delete")}>🗑 Delete</button>
           </div>
         )}
       </div>
@@ -467,6 +472,13 @@ function Dashboard({ session, onLogout }) {
   const [showLogout, setShowLogout]         = useState(false);
   const [strategy, setStrategy]             = useState(null);
   const [liveMatchResults, setLiveResults]  = useState(null);
+  const [fixtures, setFixtures]             = useState({ today:[], tomorrow:[] });
+  const [standings, setStandings]           = useState(null);
+  const [standingsLeague, setStandingsLeague] = useState(2021);
+  const [loadingFixtures, setLoadingFixtures] = useState(false);
+  const [loadingStandings, setLoadingStandings] = useState(false);
+  const [transfers, setTransfers]           = useState([]);
+  const [trending, setTrending]             = useState([]);
   const [isDark, setIsDark]                 = useState(true);
   C = isDark ? DARK_THEME : LIGHT_THEME; // eslint-disable-line
 
@@ -505,7 +517,12 @@ function Dashboard({ session, onLogout }) {
     } catch (e) { setSheetStatus("error"); msg(`❌ Sync failed: ${e.message}`, true); }
   }, []);
 
-  useEffect(() => { syncFromSheet(); fetchMatches(); }, []);
+  useEffect(() => {
+    syncFromSheet();
+    fetchMatches();
+    loadFixtures();
+    loadStandings(2021);
+  }, []);
 
   const fetchMatches = async () => {
     try { const d = await fetch("/api/matches").then(r=>r.json()); if (d.matches) setTodayMatches(d.matches.slice(0,8)); } catch {}
@@ -531,6 +548,20 @@ function Dashboard({ session, onLogout }) {
   const approvePost = async (id, action) => {
     const post = posts.find(p=>p.id===id);
     if (!post) return;
+
+    // Delete action — permanent removal
+    if (action === "delete") {
+      setPosts(p => p.filter(x=>x.id!==id));
+      if (post.sheetRow) {
+        try {
+          await fetch("/api/post", { method:"POST", headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({ action:"delete", rowIndex:post.sheetRow }) });
+          push("🗑","Post Deleted","Removed from Sheet Brain",C.red);
+        } catch {}
+      }
+      return;
+    }
+
     const status  = action==="reject"?"Rejected":"Approved";
     const account = action==="en"?"EN":action==="ar"?"AR":"BOTH";
     const now     = new Date().toLocaleTimeString("en-GB");
@@ -544,7 +575,6 @@ function Dashboard({ session, onLogout }) {
       } catch (e) { msg(`⚠️ Local only — sheet sync failed: ${e.message}`, true); }
     }
     setSyncingId(null);
-    // Auto-publish immediately after approval
     if (status === "Approved") {
       const updatedPost = { ...post, status: "approved" };
       await publishPost(updatedPost);
@@ -644,6 +674,51 @@ function Dashboard({ session, onLogout }) {
     } catch(e) { msg("❌ Engagement: "+e.message, true); }
   };
 
+  // ── LOAD FIXTURES ─────────────────────────────────────────────────────────
+  const loadFixtures = async () => {
+    setLoadingFixtures(true);
+    try {
+      const data = await fetch("/api/fixtures").then(r=>r.json());
+      if (data.success) setFixtures({ today: data.today||[], tomorrow: data.tomorrow||[] });
+    } catch {}
+    setLoadingFixtures(false);
+  };
+
+  const generatePreviews = async () => {
+    msg("⚽ Generating match preview posts...");
+    try {
+      const data = await fetch("/api/fixtures", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" }).then(r=>r.json());
+      if (data.previews?.length) {
+        push("⚽","Match Previews",`${data.previews.length} preview posts generated`,C.gold);
+        await syncFromSheet();
+        msg(`✅ ${data.previews.length} preview posts added to queue`);
+      } else { msg("ℹ️ No upcoming matches found for previews"); }
+    } catch(e) { msg("❌ Previews: "+e.message, true); }
+  };
+
+  // ── LOAD STANDINGS ────────────────────────────────────────────────────────
+  const loadStandings = async (leagueId) => {
+    setLoadingStandings(true);
+    try {
+      const id = leagueId || standingsLeague;
+      const data = await fetch(`/api/standings?league=${id}`).then(r=>r.json());
+      if (data.table) setStandings(data);
+    } catch {}
+    setLoadingStandings(false);
+  };
+
+  const generateStandingsPosts = async () => {
+    msg("📊 Generating standings posts...");
+    try {
+      const data = await fetch("/api/standings", { method:"POST", headers:{"Content-Type":"application/json"}, body:"{}" }).then(r=>r.json());
+      if (data.generated > 0) {
+        push("📊","Standings Posts",`${data.generated} league standings posts generated`,C.accent);
+        await syncFromSheet();
+        msg(`✅ ${data.generated} standings posts added to queue`);
+      }
+    } catch(e) { msg("❌ Standings: "+e.message, true); }
+  };
+
   const validateSource = async () => {
     if (!newSrcUrl.trim()) return;
     setValidating(true); setValidResult(null);
@@ -721,7 +796,7 @@ function Dashboard({ session, onLogout }) {
           </div>
         </div>
         <nav style={{ flex:1,paddingTop:8 }}>
-          {[["dashboard","📊","Dashboard"],["posts","📋","Posts Queue"],["generate","✨","Generate"],["sources","📡","Sources"],["analytics","📈","Analytics"],["monitor","🤖","Monitor Log"],["insights","🧠","Insights"],["ideas","💡","Ideas"]].map(([id,icon,label]) => (
+          {[["dashboard","📊","Dashboard"],["posts","📋","Posts Queue"],["fixtures","⚽","Fixtures"],["standings","🏆","Standings"],["generate","✨","Generate"],["sources","📡","Sources"],["analytics","📈","Analytics"],["monitor","🤖","Monitor Log"],["insights","🧠","Insights"],["ideas","💡","Ideas"]].map(([id,icon,label]) => (
             <div key={id} style={navI(nav===id)} onClick={()=>{ setNav(id); setSidebarOpen(false); }}>
               <span style={{ fontSize:16 }}>{icon}</span><span>{label}</span>
               {id==="posts"&&pending.length>0&&<span style={{ marginLeft:"auto",background:C.red,color:"#fff",borderRadius:10,padding:"1px 7px",fontSize:11,fontWeight:800 }}>{pending.length}</span>}
@@ -759,7 +834,7 @@ function Dashboard({ session, onLogout }) {
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <button className="ham" onClick={()=>setSidebarOpen(true)} style={{ display:"none",background:"none",border:"none",color:C.text,cursor:"pointer",fontSize:22,padding:0 }}>☰</button>
             <div style={{ fontSize:15,fontWeight:700 }}>
-              {{"dashboard":"Dashboard","posts":"Posts Queue","generate":"AI Generator","sources":"Sources","analytics":"Analytics","monitor":"Monitor Log","insights":"AI Insights","ideas":"Ideas"}[nav]}
+              {{"dashboard":"Dashboard","posts":"Posts Queue","fixtures":"Fixtures","standings":"League Standings","generate":"AI Generator","sources":"Sources","analytics":"Analytics","monitor":"Monitor Log","insights":"AI Insights","ideas":"Ideas"}[nav]}
             </div>
           </div>
           <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
@@ -773,9 +848,15 @@ function Dashboard({ session, onLogout }) {
             <button style={{ ...btn(C.red,true),display:"flex",alignItems:"center",gap:5 }} onClick={runLive} title="Check live matches">
               <span>⚽</span><span className="btn-full-label">Live</span>
             </button>
+            <button style={{ ...btn(C.gold,true),display:"flex",alignItems:"center",gap:5 }} onClick={()=>{ loadFixtures(); setNav("fixtures"); }} title="Today's fixtures">
+              <span>📅</span><span className="btn-full-label">Fixtures</span>
+            </button>
             <button style={btn(C.accent,true)} onClick={syncFromSheet} title="Sync from Sheet">🔄</button>
             <button onClick={()=>setIsDark(d=>!d)} style={{ background:"none",border:`1px solid ${C.border}`,borderRadius:7,padding:"5px 10px",color:C.muted,cursor:"pointer",fontSize:14 }} title="Toggle theme">{isDark?"☀️":"🌙"}</button>
             <LiveClock color={C.muted} />
+            <div style={{ fontSize:11, color:C.muted, background:`${C.border}`, borderRadius:6, padding:"4px 8px", whiteSpace:"nowrap" }}>
+              {posts.filter(p=>p.status==="posted"&&p.date===new Date().toLocaleDateString("en-GB")).length}/8 today
+            </div>
           </div>
         </div>
 
@@ -784,8 +865,8 @@ function Dashboard({ session, onLogout }) {
 
           {nav==="dashboard" && (
             <>
-              <div className="stats-grid" style={{ display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:12,marginBottom:18 }}>
-                {[["Pending",pending.length,C.red,[2,5,3,pending.length]],["Posts in Brain",posts.length,C.green,[10,14,posts.length]],["Auto-Approved",approved.filter(p=>autoApproveLabel(p)).length,C.gold,[0,2,approved.filter(p=>autoApproveLabel(p)).length]],["Sources",active,C.accent,[8,9,active]],["Published",posts.filter(p=>p.status==="posted").length,"#1d9bf0",[0,1,posts.filter(p=>p.status==="posted").length]]].map(([label,val,color,data],i) => (
+              <div className="stats-grid" style={{ display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:12,marginBottom:18 }}>
+                {[["Pending",pending.length,C.red,[2,5,3,pending.length]],["Posts",posts.length,C.green,[10,14,posts.length]],["Auto-Approved",approved.filter(p=>autoApproveLabel(p)).length,C.gold,[0,2,approved.filter(p=>autoApproveLabel(p)).length]],["Polls/Debates",posts.filter(p=>["poll","debate","reaction"].includes((p.type||"").toLowerCase())).length,"#a78bfa",[0,1,2]],["Sources",active,C.accent,[8,9,active]],["Published",posts.filter(p=>p.status==="posted").length,"#1d9bf0",[0,1,posts.filter(p=>p.status==="posted").length]]].map(([label,val,color,data],i) => (
                   <div key={i} style={{ background:C.card,border:`1px solid ${C.border}`,borderRadius:12,padding:"13px 16px" }}>
                     <div style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:7 }}>{label}</div>
                     <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-end" }}>
@@ -855,7 +936,7 @@ function Dashboard({ session, onLogout }) {
             <>
               <div style={{ display:"flex",gap:7,marginBottom:13,flexWrap:"wrap",alignItems:"center" }}>
                 <div style={{ display:"flex",gap:5,flex:1,flexWrap:"wrap" }}>
-                  {[["All",posts.length],["Pending",pending.length],["Approved",approved.length],["Rejected",rejected.length]].map(([f,n]) => (
+                  {[["All",posts.length],["Pending",pending.length],["Approved",approved.length],["Rejected",rejected.length],["Polls",posts.filter(p=>["poll","debate","reaction"].includes((p.type||"").toLowerCase())).length]].map(([f,n]) => (
                     <button key={f} style={filt(filter===f)} onClick={()=>setFilter(f)}>{f} ({n})</button>
                   ))}
                 </div>
@@ -876,7 +957,7 @@ function Dashboard({ session, onLogout }) {
                 </div>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:16 }}>
                   <div><div style={{ fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>Tone</div>
-                    <select style={{ ...sel,width:"100%" }} value={newTone} onChange={e=>setNewTone(e.target.value)}>{["Breaking","Transfer","Analytical","Funny/Sarcastic","Nostalgic","Hype","Debate"].map(t=><option key={t}>{t}</option>)}</select></div>
+                    <select style={{ ...sel,width:"100%" }} value={newTone} onChange={e=>setNewTone(e.target.value)}>{["Breaking","Transfer","Analytical","Funny/Sarcastic","Nostalgic","Hype","Debate","Poll","Reaction"].map(t=><option key={t}>{t}</option>)}</select></div>
                   <div><div style={{ fontSize:11,fontWeight:700,color:C.muted,textTransform:"uppercase",letterSpacing:1,marginBottom:5 }}>Language</div>
                     <select style={{ ...sel,width:"100%" }} value={newLang} onChange={e=>setNewLang(e.target.value)}><option value="both">Both EN + AR</option><option value="en">English Only</option><option value="ar">Arabic Only</option></select></div>
                 </div>
@@ -888,7 +969,7 @@ function Dashboard({ session, onLogout }) {
               <div style={{ ...card(),padding:14,marginTop:13 }}>
                 <div style={{ fontSize:13,fontWeight:700,marginBottom:10 }}>⚡ Quick Shortcuts</div>
                 <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:7 }}>
-                  {[["🔴 Breaking News","Breaking","Latest breaking football news"],["🔄 Transfer Update","Transfer","Latest transfer rumour confirmed"],["📅 This Day","Nostalgic","On this day in football history"],["😂 Funny","Funny/Sarcastic","Funny absurd football moment"],["🧠 Tactical","Analytical","Tactical formation breakdown"],["🔥 Debate","Debate","GOAT debate Messi vs Ronaldo"]].map(([label,tone,topic]) => (
+                  {[["🔴 Breaking News","Breaking","Latest breaking football news"],["🔄 Transfer Update","Transfer","Latest transfer rumour confirmed"],["📅 This Day","Nostalgic","On this day in football history"],["😂 Funny","Funny/Sarcastic","Funny absurd football moment"],["🧠 Tactical","Analytical","Tactical formation breakdown"],["🔥 Debate","Debate","GOAT debate Messi vs Ronaldo"],["📊 Fan Poll","Poll","Who wins the UCL this season?"],["💬 Reaction","Reaction","One word to describe watching Mbappe at his best"]].map(([label,tone,topic]) => (
                     <button key={label} style={{ background:"#070b14",border:`1px solid ${C.border}`,borderRadius:8,padding:"9px 12px",cursor:"pointer",fontSize:12,color:C.muted,fontWeight:600,textAlign:"left" }} onClick={()=>{ setNewTone(tone); setNewTopic(topic); }}>{label}</button>
                   ))}
                 </div>
@@ -1008,6 +1089,21 @@ function Dashboard({ session, onLogout }) {
               <button style={{ ...btn(monitorStatus==="running"?C.gold:C.green),width:"100%",padding:13,fontSize:14,marginTop:14 }} onClick={runMonitor} disabled={monitorStatus==="running"}>
                 {monitorStatus==="running"?"⏳ Monitor Running…":"▶ Run Monitor Now"}
               </button>
+              <div style={{ marginTop:16, background:`${C.accent}08`, border:`1px solid ${C.accent}22`, borderRadius:12, padding:14 }}>
+                <div style={{ fontSize:12, fontWeight:800, color:C.accent, marginBottom:8 }}>⚖️ Legal Compliance Active</div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:6, fontSize:11, color:C.muted }}>
+                  {[
+                    ["✅","Max 8 posts/day — enforced"],["✅","45-min spacing between posts"],
+                    ["✅","Source attribution on every post"],["✅","No full article copying — AI rewrites only"],
+                    ["✅","Personal allegation guard (2+ sources req.)"],["✅","Image policy: DALL-E / Unsplash / Pexels only"],
+                    ["✅","Hash-based duplicate detection"],["✅","Single low-cred sources → Pending"],
+                  ].map(([icon,text])=>(
+                    <div key={text} style={{ display:"flex", gap:5, alignItems:"flex-start" }}>
+                      <span style={{ color:C.green }}>{icon}</span><span>{text}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             </div>
           )}
 
@@ -1053,6 +1149,128 @@ function Dashboard({ session, onLogout }) {
                     After 7+ days of posting, it will automatically adjust<br/>tone, topics and frequency for maximum growth.
                   </div>
                   <button style={btn(C.purple)} onClick={runEngagement}>📊 Run First Analysis</button>
+                </div>
+              )}
+            </div>
+          )}
+
+          {nav==="fixtures" && (
+            <div>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
+                <div style={{ fontSize:15,fontWeight:800 }}>⚽ Match Fixtures</div>
+                <div style={{ display:"flex",gap:8 }}>
+                  <button style={btn(C.gold,true)} onClick={generatePreviews}>✍️ Generate Previews</button>
+                  <button style={btn(C.accent,true)} onClick={loadFixtures} disabled={loadingFixtures}>{loadingFixtures?"Loading...":"🔄 Refresh"}</button>
+                </div>
+              </div>
+
+              {/* TODAY */}
+              <div style={{ fontSize:13,fontWeight:800,color:C.accent,marginBottom:10,textTransform:"uppercase",letterSpacing:1 }}>Today</div>
+              {fixtures.today.length === 0 ? (
+                <div style={{ ...card(),padding:30,textAlign:"center",color:C.muted,marginBottom:16 }}>No monitored matches today</div>
+              ) : (
+                <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10,marginBottom:20 }}>
+                  {fixtures.today.map(m => (
+                    <div key={m.id} style={{ ...card(),padding:14 }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+                        <span style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1 }}>{m.competition}</span>
+                        <span style={{ fontSize:11,fontWeight:700,
+                          color:m.status==="IN_PLAY"?C.green:m.status==="PAUSED"?C.gold:m.status==="FINISHED"?C.muted:C.accent,
+                          background:m.status==="IN_PLAY"?`${C.green}20`:m.status==="FINISHED"?`${C.muted}15`:`${C.accent}15`,
+                          padding:"2px 8px",borderRadius:6
+                        }}>
+                          {m.status==="IN_PLAY"?`🔴 ${m.minute}'`:m.status==="PAUSED"?"⏸ HT":m.status==="FINISHED"?"FT":m.utcDate?new Date(m.utcDate).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}):"--:--"}
+                        </span>
+                      </div>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                        <div style={{ fontSize:13,fontWeight:700,flex:1 }}>{m.home}</div>
+                        <div style={{ fontSize:18,fontWeight:800,padding:"0 12px",color:m.status==="SCHEDULED"?C.muted:C.text }}>
+                          {m.status==="SCHEDULED" ? "vs" : `${m.homeScore ?? 0} - ${m.awayScore ?? 0}`}
+                        </div>
+                        <div style={{ fontSize:13,fontWeight:700,flex:1,textAlign:"right" }}>{m.away}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* TOMORROW */}
+              <div style={{ fontSize:13,fontWeight:800,color:C.gold,marginBottom:10,textTransform:"uppercase",letterSpacing:1 }}>Tomorrow</div>
+              {fixtures.tomorrow.length === 0 ? (
+                <div style={{ ...card(),padding:30,textAlign:"center",color:C.muted }}>No monitored matches tomorrow</div>
+              ) : (
+                <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:10 }}>
+                  {fixtures.tomorrow.map(m => (
+                    <div key={m.id} style={{ ...card(),padding:14 }}>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8 }}>
+                        <span style={{ fontSize:10,color:C.muted,textTransform:"uppercase",letterSpacing:1 }}>{m.competition}</span>
+                        <span style={{ fontSize:11,fontWeight:700,color:C.accent }}>
+                          {m.utcDate?new Date(m.utcDate).toLocaleTimeString("en-GB",{hour:"2-digit",minute:"2-digit",timeZone:"Asia/Riyadh"}):"--:--"}
+                        </span>
+                      </div>
+                      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                        <div style={{ fontSize:13,fontWeight:700,flex:1 }}>{m.home}</div>
+                        <div style={{ fontSize:16,fontWeight:800,padding:"0 12px",color:C.muted }}>vs</div>
+                        <div style={{ fontSize:13,fontWeight:700,flex:1,textAlign:"right" }}>{m.away}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {nav==="standings" && (
+            <div>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14 }}>
+                <div style={{ fontSize:15,fontWeight:800 }}>🏆 League Standings</div>
+                <div style={{ display:"flex",gap:8 }}>
+                  <button style={btn(C.gold,true)} onClick={generateStandingsPosts}>✍️ Generate Posts</button>
+                  <button style={btn(C.accent,true)} onClick={()=>loadStandings(standingsLeague)} disabled={loadingStandings}>{loadingStandings?"Loading...":"🔄 Refresh"}</button>
+                </div>
+              </div>
+
+              {/* League selector */}
+              <div style={{ display:"flex",gap:8,marginBottom:16,flexWrap:"wrap" }}>
+                {[[2021,"🏴󠁧󠁢󠁥󠁮󠁧󠁿 PL"],[2014,"🇪🇸 La Liga"],[2019,"🇮🇹 Serie A"],[2002,"🇩🇪 Bundesliga"],[2015,"🇫🇷 Ligue 1"],[2001,"🏆 UCL"]].map(([id,label]) => (
+                  <button key={id} onClick={()=>{ setStandingsLeague(id); loadStandings(id); }}
+                    style={{ padding:"6px 14px",borderRadius:8,border:`1px solid ${standingsLeague===id?C.accent:C.border}`,
+                      background:standingsLeague===id?`${C.accent}20`:"transparent",
+                      color:standingsLeague===id?C.accent:C.muted,cursor:"pointer",fontSize:12,fontWeight:700 }}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+
+              {standings?.table ? (
+                <div style={card()}>
+                  <div style={{ padding:"10px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:8,fontSize:11,color:C.muted,fontWeight:700,textTransform:"uppercase" }}>
+                    <span style={{ width:24 }}>#</span>
+                    <span style={{ flex:1 }}>Club</span>
+                    <span style={{ width:28,textAlign:"center" }}>P</span>
+                    <span style={{ width:28,textAlign:"center" }}>W</span>
+                    <span style={{ width:28,textAlign:"center" }}>D</span>
+                    <span style={{ width:28,textAlign:"center" }}>L</span>
+                    <span style={{ width:36,textAlign:"center" }}>GD</span>
+                    <span style={{ width:36,textAlign:"center",color:C.accent }}>Pts</span>
+                  </div>
+                  {standings.table.map((row,i) => (
+                    <div key={i} style={{ padding:"9px 14px",borderBottom:`1px solid ${C.border}`,display:"flex",gap:8,alignItems:"center",
+                      background:i<4?`${C.accent}06`:i===standings.table.length-1||i===standings.table.length-2||i===standings.table.length-3?`${C.red}06`:"transparent" }}>
+                      <span style={{ width:24,fontSize:12,fontWeight:800,color:i<4?C.accent:i>=standings.table.length-3?C.red:C.muted }}>{row.position}</span>
+                      <span style={{ flex:1,fontSize:13,fontWeight:600 }}>{row.team}</span>
+                      <span style={{ width:28,textAlign:"center",fontSize:12,color:C.muted }}>{row.played}</span>
+                      <span style={{ width:28,textAlign:"center",fontSize:12,color:C.green }}>{row.won}</span>
+                      <span style={{ width:28,textAlign:"center",fontSize:12,color:C.muted }}>{row.draw}</span>
+                      <span style={{ width:28,textAlign:"center",fontSize:12,color:C.red }}>{row.lost}</span>
+                      <span style={{ width:36,textAlign:"center",fontSize:12,color:row.gd>0?C.green:row.gd<0?C.red:C.muted }}>{row.gd>0?"+":""}{row.gd}</span>
+                      <span style={{ width:36,textAlign:"center",fontSize:13,fontWeight:800,color:C.accent }}>{row.points}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ ...card(),padding:40,textAlign:"center",color:C.muted }}>
+                  {loadingStandings ? "Loading standings..." : "Select a league above"}
                 </div>
               )}
             </div>
